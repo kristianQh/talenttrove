@@ -1,0 +1,1 @@
+link = job.find("a", {"class": "PaidJob-link"})["href"]
