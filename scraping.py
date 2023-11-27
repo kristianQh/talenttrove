@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 from selenium import webdriver
 from langdetect import detect
+from selenium.webdriver.firefox.options import Options
 from selenium.common.exceptions import TimeoutException
 
 
@@ -16,8 +17,9 @@ def tag_visible(element):
     return True
 
 # TODO Remove all jobs with company name "Jobindex Kurser"
-
-jobs = []
+options = Options()
+options.add_argument('--headless')
+driver = webdriver.Firefox(options=options)
 
 def retrieve_html(url):
     response = requests.get(url)
@@ -43,17 +45,17 @@ def scrape_jobs(job_keywords, config, base_url):
     
     for job_ad in job_listings:
         title = find_element(job_ad, config['title'])
-        print(title)
-        url = find_element_attribute(job_ad, config['url'], 'href')
+        url = job_ad.find("a", text='Se jobbet')["href"]
+        if url in jobs:
+            print("Duplicate")
+            continue
         company = find_element(job_ad, config['company'])
         location = find_element(job_ad, config['location'])
         description = find_description(url, config['description'])
         lang = detect(description)
-        if title and company not in jobs:
-            jobs.append({"title": title, "company": company,
-                         "location": location, "link": url, 
-                         "description": description, "language": lang})
+        jobs.append([title, company, location, description, lang])
 
+    driver.quit()
     return jobs
 
 def find_element(soup, element_config):
@@ -65,37 +67,35 @@ def find_element_attribute(soup, element_config, attribute):
     return element[attribute] if element and attribute in element.attrs else "Unknown"
 
 def find_description(url, element_config):
-    driver = webdriver.Firefox()
     driver.set_page_load_timeout(3)
     try:
         driver.get(url)
-        time.sleep(0.2)
+        time.sleep(0.5)
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
-        if element_config == None:
+        if element_config:
+            return find_element(soup, element_config)
+        else:
+            print("ok")
             texts = soup.findAll(text=True)
             visible_texts = filter(tag_visible, texts)
             return  " ".join(t.strip() for t in visible_texts)
-        else:
-            return find_element(soup, element_config)
     except TimeoutException:
         print("TimeoutException")
         return "Unknown"
-    finally:
-        driver.quit()
 
-config = {
+job_index_config = {
     'job_container': {'tag': 'div', 'class': {'class': ["PaidJob", "jix_robotjob"]}},
     'title': {'tag': 'h4', 'class': {'class': ""}},
-    'url': {'tag': 'a', 'class': {'class': ""}},
+    'url': {'tag': 'a', 'class': {'class': "PaidJob-inner"}},
     'company': {'tag': 'div', 'class': {'class': 'jix-toolbar-top__company'}},
     'location': {'tag': 'span', 'class': {'class': 'jix_robotjob--area'}},
     'description': None
 }
 
 base_url = "https://www.jobindex.dk/jobsoegning?page={page}&q={job}%27&subid=1&subid=3&subid=4&subid=6&subid=93"
-jobs = scrape_jobs(["\"Data+Science\"", "Softwareudvikler", "\"Machine+Learning\"", "Datalog"], config, base_url)
-print(len(jobs))
+scraped_jobs = scrape_jobs(["\"Data+Science\"", "Softwareudvikler", "\"Machine+Learning\"", "Datalog"], job_index_config, base_url)
+print(len(scraped_jobs))
 
 
 # def scrape_jobs_hub(job):
@@ -185,9 +185,8 @@ print(len(jobs))
 # jobs = scrape_jobs(["\"Data+Science\"", "Softwareudvikler", "\"Machine+Learning\"", "Datalog"])
 # print(len(jobs)) 
 
-# csv_file = "job_info.csv"
-# with open(csv_file, mode="w", newline='', encoding='utf-8') as file:
-#     writer = csv.DictWriter(file, fieldnames=["title", "company", "location", "link", "description", "language"])
-#     writer.writeheader()
-#     for job in jobs:
-#         writer.writerow(job)
+csv_file = "job_info.csv"
+with open(csv_file, mode="w", newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Title', 'Company', 'Location', 'URL', 'Description', 'Language'])
+    writer.writerows(scraped_jobs)
