@@ -26,8 +26,7 @@ def retrieve_html(url):
     soup = BeautifulSoup(response.text, "html.parser")
     return soup
 
-def scrape_jobs(job_keywords, config, base_url):
-    jobs = []
+def retrieve_jobs(job_keywords, config, base_url):
     job_listings = []
     for job_keyword in job_keywords:
         page = 1
@@ -42,6 +41,11 @@ def scrape_jobs(job_keywords, config, base_url):
 
             job_listings += fetched_jobs
             page += 1
+    return job_listings
+
+jobs = []
+def scrape_jobindex(job_keywords, config, base_url):
+    job_listings = retrieve_jobs(job_keywords, config, base_url)
     
     for job_ad in job_listings:
         title = find_element(job_ad, config['title'])
@@ -54,8 +58,24 @@ def scrape_jobs(job_keywords, config, base_url):
         description = find_description(url, config['description'])
         lang = detect(description)
         jobs.append([title, company, location, description, lang])
+    return jobs
 
-    driver.quit()
+def scrape_hub(job_keywords, config, base_url):
+    job_listings = retrieve_jobs(job_keywords, config, base_url)
+    
+    for job_ad in job_listings:
+        title = find_element(job_ad, config['title'])
+        url = "https://thehub.io" + job_ad.find("a", class_="card-job-find-list__link")["href"]
+        if url in jobs:
+            print("Duplicate")
+            continue
+        bullets = job_ad.find("div", {"class": "bullet-inline-list"})
+        company, location = [span.text for span in bullets.find_all("span")][:2]
+        description = find_description(url, config['description'])
+        lang = detect(description)
+        print(title, company, location, lang)
+        print("====================================")
+        jobs.append([title, company, location, description, lang])
     return jobs
 
 def find_element(soup, element_config):
@@ -73,10 +93,11 @@ def find_description(url, element_config):
         time.sleep(0.5)
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
+        # print(soup)
+        description = soup.find("div", {"class": "text-block"}).text.strip()
         if element_config:
             return find_element(soup, element_config)
         else:
-            print("ok")
             texts = soup.findAll(text=True)
             visible_texts = filter(tag_visible, texts)
             return  " ".join(t.strip() for t in visible_texts)
@@ -87,15 +108,27 @@ def find_description(url, element_config):
 job_index_config = {
     'job_container': {'tag': 'div', 'class': {'class': ["PaidJob", "jix_robotjob"]}},
     'title': {'tag': 'h4', 'class': {'class': ""}},
-    'url': {'tag': 'a', 'class': {'class': "PaidJob-inner"}},
     'company': {'tag': 'div', 'class': {'class': 'jix-toolbar-top__company'}},
     'location': {'tag': 'span', 'class': {'class': 'jix_robotjob--area'}},
     'description': None
 }
 
+hub_config = {
+    'config_name' : "hub_index_config",
+    'job_container': {'tag': 'div', 'class': {'class': "my-10"}},
+    'title': {'tag': 'span', 'class': {'class': "card-job-find-list__position"}},
+    'url': {'tag': 'a', 'class': {'class': "card-job-find-list__link"}},
+    'company': {'tag': 'div', 'class': {'class': 'jix-toolbar-top__company'}},
+    'location': {'tag': 'span', 'class': {'class': 'jix_robotjob--area'}},
+    'description': {'tag': 'div', 'class': {'class': 'text-block'}},
+}
+
+
 base_url = "https://www.jobindex.dk/jobsoegning?page={page}&q={job}%27&subid=1&subid=3&subid=4&subid=6&subid=93"
-scraped_jobs = scrape_jobs(["\"Data+Science\"", "Softwareudvikler", "\"Machine+Learning\"", "Datalog"], job_index_config, base_url)
+base_url2 = "https://thehub.io/jobs?search={job}&location=Denmark&countryCode=DK&sorting=mostPopular&page={page}"
+scraped_jobs = scrape_hub(["Data Science"], hub_config, base_url2)
 print(len(scraped_jobs))
+driver.quit()
 
 
 # def scrape_jobs_hub(job):
